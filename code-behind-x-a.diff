@@ -1,0 +1,1061 @@
+diff --git a/Xamarin.Android.sln b/Xamarin.Android.sln
+index af6dd5e..b0fb40c 100644
+--- a/Xamarin.Android.sln
++++ b/Xamarin.Android.sln
+@@ -101,6 +101,8 @@ Global
+ 		Release|AnyCPU = Release|AnyCPU
+ 		XAIntegrationDebug|AnyCPU = XAIntegrationDebug|AnyCPU
+ 		XAIntegrationRelease|AnyCPU = XAIntegrationRelease|AnyCPU
++		XAIntegrationDebug|Any CPU = XAIntegrationDebug|Any CPU
++		XAIntegrationRelease|Any CPU = XAIntegrationRelease|Any CPU
+ 	EndGlobalSection
+ 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+ 		{3F1F2F50-AF1A-4A5A-BEDB-193372F068D7}.Debug|AnyCPU.ActiveCfg = Debug|Any CPU
+@@ -488,5 +490,8 @@ Global
+ 		$0.DotNetNamingPolicy = $1
+ 		$1.DirectoryNamespaceAssociation = None
+ 		$1.ResourceNamePolicy = FileFormatDefault
++		$0.StandardHeader = $2
++		$2.Text = @\n${FileName}\n \nAuthor:\n      ${AuthorName} <${AuthorEmail}>\n\nCopyright (c) ${Year} ${CopyrightHolder}\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the "Software"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in\nall copies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN\nTHE SOFTWARE.
++		$2.IncludeInNewFiles = True
+ 	EndGlobalSection
+ EndGlobal
+diff --git a/src/Xamarin.Android.Build.Tasks/Tasks/FindLayoutsWithCodeBehind.cs b/src/Xamarin.Android.Build.Tasks/Tasks/FindLayoutsWithCodeBehind.cs
+new file mode 100644
+index 0000000..2cc6a30
+--- /dev/null
++++ b/src/Xamarin.Android.Build.Tasks/Tasks/FindLayoutsWithCodeBehind.cs
+@@ -0,0 +1,132 @@
++//
++// GenerateLayoutsCodeBehind.cs
++//
++// Author:
++//       Marek Habersack <grendel@twistedcode.net>
++//
++// Copyright (c) 2016 Microsoft Corp. (http://microsoft.com/)
++//
++// Permission is hereby granted, free of charge, to any person obtaining a copy
++// of this software and associated documentation files (the "Software"), to deal
++// in the Software without restriction, including without limitation the rights
++// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
++// copies of the Software, and to permit persons to whom the Software is
++// furnished to do so, subject to the following conditions:
++//
++// The above copyright notice and this permission notice shall be included in
++// all copies or substantial portions of the Software.
++//
++// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
++// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
++// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
++// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
++// THE SOFTWARE.
++
++using System;
++using System.Collections.Generic;
++using System.IO;
++using System.Linq;
++using System.Xml.Linq;
++using System.Xml.XPath;
++
++using Microsoft.Build.Utilities;
++using Microsoft.Build.Framework;
++
++namespace Xamarin.Android.Tasks
++{
++	public class FindLayoutsWithCodeBehind : Task
++	{
++		static readonly string LayoutDirSuffix = Path.DirectorySeparatorChar + "layout";
++
++		[Required]
++		public ITaskItem[] ResourceFiles { get; set; }
++
++		// Meant to be used by the IDE when it wants to (re)generate code-behind for a single, specific file
++		// Specifying it explicitly saves us time
++		public string ExplicitFile { get; set; }
++
++		[Output]
++		public ITaskItem[] LayoutFiles { get; set; }
++
++		public override bool Execute ()
++		{
++			Log.LogDebugMessage   ("FindLayoutsWithCodeBehind Task");
++			Log.LogDebugTaskItems ("  ResourceFiles:", ResourceFiles);
++			Log.LogDebugMessage   ("  ExplicitFile: {0}", ExplicitFile);
++
++			if (ResourceFiles.Length == 0)
++				return true;
++
++			string klass;
++			var layoutFiles = new List<ITaskItem> ();
++			if (!String.IsNullOrEmpty (ExplicitFile)) {
++				if (IsCodeBehindLayoutFile (ExplicitFile, out klass))
++					CreateLayoutItems (ExplicitFile, klass, layoutFiles);
++			} else {
++				foreach (ITaskItem item in ResourceFiles) {
++					string fileName = item.ItemSpec;
++					if (!IsCodeBehindLayoutFile (fileName, out klass))
++						continue;
++					CreateLayoutItems (fileName, klass, layoutFiles);
++				}
++			}
++
++			if (layoutFiles.Count == 0) {
++				Log.LogDebugMessage ("  No layout file qualifies for code-behind generation");
++				return true;
++			}
++			LayoutFiles = layoutFiles.ToArray ();
++
++			Log.LogDebugTaskItems ("  LayoutFiles:", LayoutFiles);
++			return !Log.HasLoggedErrors;
++		}
++
++		void CreateLayoutItems (string fileName, string klass, List <ITaskItem> layoutFiles)
++		{
++			string[] classes = klass?.Split (',');
++			if (classes == null || classes.Length == 0)
++				return;
++
++			foreach (string c in classes) {
++				string cl = c?.Trim ();
++				if (String.IsNullOrEmpty (cl))
++					continue;
++
++				layoutFiles.Add (CreateLayoutItem (fileName, cl));
++			}
++		}
++
++		ITaskItem CreateLayoutItem (string fileName, string klass)
++		{
++			var ret = new TaskItem (fileName);
++			ret.SetMetadata ("CodeBehindFileName", $"{Path.GetFileNameWithoutExtension (fileName)}-{klass}.cs");
++			ret.SetMetadata ("ClassName", klass);
++			return ret;
++		}
++
++		protected bool IsCodeBehindLayoutFile (string fileName, out string klass)
++		{
++			klass = null;
++			if (String.IsNullOrEmpty (fileName) || !File.Exists (fileName))
++				return false;
++
++			if (!Path.GetDirectoryName (fileName).EndsWith (LayoutDirSuffix, StringComparison.OrdinalIgnoreCase))
++				return false;
++
++			if (!fileName.EndsWith (".axml", StringComparison.OrdinalIgnoreCase) && !fileName.EndsWith (".xml", StringComparison.OrdinalIgnoreCase))
++				return false;
++
++			var doc = XDocument.Load (fileName);
++			XAttribute tools = doc.Root?.Attributes ()?.FirstOrDefault (xa => xa.IsNamespaceDeclaration && xa.Name.LocalName == "tools");
++			if (tools == null)
++				return false;
++
++			XNamespace toolsNS = tools.Value;
++			XAttribute classAttribute = doc.Root?.Attribute (toolsNS + "class");
++			klass = classAttribute?.Value;
++			return !String.IsNullOrEmpty (klass);
++		}
++	}
++}
+diff --git a/src/Xamarin.Android.Build.Tasks/Tasks/GenerateLayoutsCodeBehind.cs b/src/Xamarin.Android.Build.Tasks/Tasks/GenerateLayoutsCodeBehind.cs
+new file mode 100644
+index 0000000..c4b8f48
+--- /dev/null
++++ b/src/Xamarin.Android.Build.Tasks/Tasks/GenerateLayoutsCodeBehind.cs
+@@ -0,0 +1,823 @@
++﻿//
++// GenerateLayoutsCodeBehind.cs
++//
++// Author:
++//       Marek Habersack <grendel@twistedcode.net>
++//
++// Copyright (c) 2016 Microsoft Corp. (http://microsoft.com/)
++//
++// Permission is hereby granted, free of charge, to any person obtaining a copy
++// of this software and associated documentation files (the "Software"), to deal
++// in the Software without restriction, including without limitation the rights
++// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
++// copies of the Software, and to permit persons to whom the Software is
++// furnished to do so, subject to the following conditions:
++//
++// The above copyright notice and this permission notice shall be included in
++// all copies or substantial portions of the Software.
++//
++// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
++// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
++// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
++// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
++// THE SOFTWARE.
++
++using System;
++using System.CodeDom;
++using System.CodeDom.Compiler;
++using System.Collections.Generic;
++using System.IO;
++using System.Linq;
++using System.Reflection;
++using System.Runtime.CompilerServices;
++using System.Text;
++using System.Xml;
++using System.Xml.Linq;
++using System.Xml.XPath;
++
++using Microsoft.Build.Utilities;
++using Microsoft.Build.Framework;
++using Microsoft.CSharp;
++
++namespace Xamarin.Android.Tasks
++{
++	public class GenerateLayoutsCodeBehind : Task
++	{
++		const string UserDataIsMainKey = "IsMain";
++		const string ChildClassParentFieldName = "__parent";
++
++		sealed class Widget
++		{
++			Lazy <List <Widget>> children = new Lazy <List <Widget>> (false);
++			Lazy <HashSet <string>> idCache = new Lazy <HashSet <string>> (false);
++
++			public List <Widget> Children {
++				get { return children.Value; }
++			}
++
++			public HashSet <string> IDCache {
++				get { return idCache.Value; }
++			}
++
++			public bool IsLeaf {
++				get { return !children.IsValueCreated || children.Value.Count == 0; }
++			}
++
++			public string Name { get; set; }
++			public string Type { get; set; }
++			public string ID { get; set; }
++			public string FileName { get; set; }
++			public int Line { get; set; }
++			public int Column { get; set; }
++			public Widget Parent { get; set; }
++			public bool IsInaccessible { get; set; }
++			public bool IsRoot { get; set; }
++
++			public void AddChild (Widget child)
++			{
++				if (child == null)
++					return;
++				if (String.IsNullOrEmpty (child.ID))
++					throw new InvalidOperationException ("Attempt to add a child without ID");
++
++				Children.Add (child);
++				if (IDCache.Contains (child.ID))
++					child.IsInaccessible = true;
++				else
++					IDCache.Add (child.ID);
++			}
++		}
++
++		enum MethodAccessibility {
++			Internal,
++			Private,
++			Protected,
++			Public,
++		};
++
++		[Flags]
++		enum MethodScope {
++			Abstract = 0x01,
++			Override = 0x02,
++			Static   = 0x04,
++			Virtual  = 0x08,
++			Final    = 0x10,
++		}
++
++		static readonly List <string> StandardImports = new List <string> {
++			"System",
++			"Android.App",
++			"Android.Widget",
++			"Android.Views",
++			"Android.OS"
++		};
++
++		[Required]
++		public ITaskItem[] LayoutFiles { get; set; }
++
++		[Required]
++		public ITaskItem[] CodeBehindFiles { get; set; }
++
++		public override bool Execute ()
++		{
++			Log.LogDebugMessage   ("GenerateResourceCodeBehind Task");
++			Log.LogDebugTaskItems ("  LayoutFiles:", LayoutFiles);
++			Log.LogDebugTaskItems ("  CodeBehindFiles:", CodeBehindFiles);
++
++			if (LayoutFiles.Length == 0)
++				return true;
++
++			if (LayoutFiles.Length != CodeBehindFiles.Length) {
++				Log.LogError ("There must be the same number of items in both 'LayoutFiles' and 'CodeBehindFiles'");
++				return false;
++			}
++
++			var generatorOptions = new CodeGeneratorOptions {
++				BlankLinesBetweenMembers = true,
++				VerbatimOrder = false,
++			};
++			var generatedFiles = new List<ITaskItem> ();
++			for (int i = 0; i < LayoutFiles.Length; i++) {
++				ITaskItem item = GenerateCode (LayoutFiles [i], CodeBehindFiles [i], generatorOptions);
++				if (item != null)
++					generatedFiles.Add (item);
++			}
++
++			Log.LogDebugTaskItems ("  GeneratedFiles:", generatedFiles.ToArray ());
++			return !Log.HasLoggedErrors;
++		}
++
++		XNamespace GetNamespace (XElement e, string name)
++		{
++			return e?.Attributes ()?.FirstOrDefault (xa => xa.IsNamespaceDeclaration && xa.Name.LocalName == name)?.Value;
++		}
++
++		XAttribute GetAttribute (XElement e, XNamespace ns, string name)
++		{
++			return e?.Attribute (ns + name);
++		}
++
++		void GetLineInfo (XElement e, out int line, out int column)
++		{
++			var linfo = e as IXmlLineInfo;
++			if (!linfo.HasLineInfo ()) {
++				line = column = -1;
++				return;
++			}
++			line = linfo.LineNumber;
++			column = linfo.LinePosition;
++		}
++
++		bool GenerateLayoutMembers (CodeTypeDeclaration mainClass, string fileName)
++		{
++			var doc = XDocument.Load (fileName, LoadOptions.SetLineInfo);
++			XNamespace toolsNS = GetNamespace (doc.Root, "tools");
++			if (toolsNS == null) {
++				Log.LogError ($"Layout file '{fileName}' doesn't define the 'tools' namespace");
++				return false;
++			}
++
++			XAttribute classAttribute = GetAttribute (doc.Root, toolsNS, "class");
++			string klass = classAttribute?.Value?.Trim ();
++			if (String.IsNullOrEmpty (klass)) {
++				Log.LogError ($"Layout file '{fileName}' doesn't have root element with the 'tools:class' attribute or the attribute has invalid value");
++				return false;
++			}
++
++			XNamespace androidNS = GetNamespace (doc.Root, "android");
++			var globalIdCache = new Dictionary <string, int> (StringComparer.Ordinal);
++			var root = new Widget {
++				IsRoot = true
++			};
++			LoadWidgets (fileName, doc.Root, androidNS, root, globalIdCache);
++			return GenerateWidgetMembers (mainClass, mainClass.Name, root, globalIdCache, String.Empty);
++		}
++
++		bool GenerateWidgetMembers (CodeTypeDeclaration klass, string parentType, Widget widget, Dictionary <string, int> globalIdCache, string indent)
++		{
++			Log.LogDebugMessage ($"Widget members for class {klass.Name}");
++			if (!widget.IsRoot)
++				Log.LogDebugMessage ($"{indent}Widget {widget.Name} with ID '{widget.ID}' and type '{widget.Type}'");
++
++			if (widget.IsInaccessible)
++				return true;
++
++			if (widget.IsLeaf)
++				return GenerateLeafWidgetMember (klass, widget, globalIdCache);
++
++			CodeTypeDeclaration widgetClass;
++			if (widget.IsRoot)
++				widgetClass = klass;
++			else {
++				if (!GenerateGroupWidgetMember (klass, parentType, widget, globalIdCache, out widgetClass))
++					return false;
++			}
++
++			bool ret = true;
++			foreach (Widget child in widget.Children) {
++				// Don't fail when one widget fails, try to generate as many members as possible thus
++				// making it possible for the developer to know what all is broken at a glance instead
++				// of re-running the build
++				if (!GenerateWidgetMembers (widgetClass, parentType, child, globalIdCache, indent + "   "))
++					ret = false;
++			}
++
++			return ret;
++		}
++
++		bool CreateWidgetMembers (CodeTypeDeclaration klass, Widget widget, string memberType, Dictionary <string, int> globalIdCache, CodeMemberMethod creator)
++		{
++			bool ret = true;
++			CodeMemberField backingField = CreateBackingField (widget, memberType);
++
++			klass.Members.Add (backingField);
++			klass.Members.Add (creator);
++			klass.Members.Add (CreateProperty (widget, memberType, backingField, creator, GetParent (klass)));
++
++			return ret;
++		}
++
++		CodeExpression GetParent (CodeTypeDeclaration klass)
++		{
++			if (klass.UserData.Contains (UserDataIsMainKey) && (bool)klass.UserData [UserDataIsMainKey])
++				return new CodeThisReferenceExpression ();
++			return new CodeFieldReferenceExpression (new CodeThisReferenceExpression (), ChildClassParentFieldName);
++		}
++
++		bool GenerateLeafWidgetMember (CodeTypeDeclaration klass, Widget widget, Dictionary <string, int> globalIdCache)
++		{
++			List <Widget> findPath = GetShortestFindPath (widget, globalIdCache);
++			return CreateWidgetMembers (klass, widget, widget.Type, globalIdCache, ImplementWidgetCreator (widget, GetParent (klass), findPath));
++		}
++
++		bool GenerateGroupWidgetMember (CodeTypeDeclaration klass, string parentType, Widget widget, Dictionary <string, int> globalIdCache, out CodeTypeDeclaration widgetClass)
++		{
++			string className = GetClassName (widget);
++			widgetClass = AddLayoutClass (klass, GetClassName (widget), parentType);
++			return CreateWidgetMembers (klass, widget, className, globalIdCache, ImplementLayoutClassCreator (widget));
++		}
++
++		List <Widget> GetShortestFindPath (Widget widget, Dictionary <string, int> globalIdCache)
++		{
++			if (HasUniqueId (widget, globalIdCache)) {
++				return new List <Widget> {
++					widget
++				};
++			}
++
++			var ret = new List <Widget> ();
++			var w = widget.Parent;
++			while (w != null && !w.IsRoot) {
++				ret.Add (w);
++				if (HasUniqueId (w, globalIdCache))
++					break;
++				w = w.Parent;
++			}
++			ret.Add (widget);
++
++			return ret;
++		}
++
++		CodeMemberProperty CreateProperty (Widget widget, string returnType, CodeMemberField backingField, CodeMemberMethod creator, CodeExpression parent)
++		{
++			var ensureViewRef = new CodeMethodReferenceExpression (parent, "__EnsureView");
++			ensureViewRef.TypeArguments.Add (new CodeTypeReference (returnType));
++
++			var ensureViewInvoke = new CodeMethodInvokeExpression (
++				ensureViewRef,
++				new CodeExpression[] { new CodeMethodReferenceExpression (new CodeThisReferenceExpression (), creator.Name),
++						       new CodeDirectionExpression (FieldDirection.Ref, new CodeFieldReferenceExpression (new CodeThisReferenceExpression (), backingField.Name))
++				}
++			);
++
++			var ret = new CodeMemberProperty {
++				Name = widget.Name,
++				HasGet = true,
++				HasSet = false,
++				Type = new CodeTypeReference (returnType),
++				LinePragma = new CodeLinePragma (widget.FileName, widget.Line),
++				Attributes = MemberAttributes.Public | MemberAttributes.Final
++			};
++
++			ret.GetStatements.Add (new CodeMethodReturnStatement (ensureViewInvoke));
++			return ret;
++		}
++
++		string GetClassName (Widget widget)
++		{
++			return $"__{widget.Name}_Views";
++		}
++
++		CodeMemberMethod ImplementLayoutClassCreator (Widget widget)
++		{
++			string className = GetClassName (widget);
++			CodeMemberMethod method = CreateMethod ($"__CreateClass_{className}", MethodAccessibility.Private, MethodScope.Final, className);
++
++			var instantiate = new CodeObjectCreateExpression (
++				className,
++				new[] { new CodeThisReferenceExpression () }
++			);
++			method.Statements.Add (new CodeMethodReturnStatement (instantiate));
++
++			return method;
++		}
++
++		CodeMemberMethod ImplementWidgetCreator (Widget widget, CodeExpression parent, List <Widget> findPath)
++		{
++			CodeMemberMethod method = CreateMethod ($"__Create_{widget.Name}", MethodAccessibility.Private, MethodScope.Final, widget.Type);
++
++			if (findPath.Count == 1) {
++				method.Statements.Add (new CodeMethodReturnStatement (CreateFindViewInvoke (findPath [0], parent, parent)));
++				return method;
++			}
++			var viewVar = new CodeVariableDeclarationStatement ("View", "view");
++			var viewVarRef = new CodeVariableReferenceExpression ("view");
++			method.Statements.Add (viewVar);
++
++			CodeExpression parentView = parent;
++			foreach (Widget w in findPath) {
++				CodeMethodInvokeExpression findViewCall = CreateFindViewInvoke (w, parent, parentView);
++				var assignView = new CodeAssignStatement (viewVarRef, findViewCall);
++				var ifViewNull = new CodeConditionStatement (
++					new CodeBinaryOperatorExpression (viewVarRef, CodeBinaryOperatorType.IdentityInequality, new CodePrimitiveExpression(null)),
++					new[] { new CodeMethodReturnStatement (new CodePrimitiveExpression (null)) }
++				);
++
++				method.Statements.Add (assignView);
++				method.Statements.Add (ifViewNull);
++
++				if (parentView == parent)
++					parentView = viewVarRef;
++			}
++
++			method.Statements.Add (new CodeMethodReturnStatement (new CodeCastExpression (widget.Type, viewVarRef)));
++
++			return method;
++		}
++
++		CodeMethodInvokeExpression CreateFindViewInvoke (Widget widget, CodeExpression parent, CodeExpression parentView)
++		{
++			var findViewRef = new CodeMethodReferenceExpression (parent, "__FindView");
++			findViewRef.TypeArguments.Add (new CodeTypeReference (widget.Type));
++
++			return new CodeMethodInvokeExpression (findViewRef, new CodeExpression[] { parentView, new CodeSnippetExpression (widget.ID) });
++		}
++
++		CodeMemberField CreateBackingField (Widget widget, string memberType)
++		{
++			return new CodeMemberField (memberType, $"__{widget.Name}") {
++				LinePragma = new CodeLinePragma (widget.FileName, widget.Line)
++			};
++		}
++
++		bool HasUniqueId (Widget widget, Dictionary <string, int> globalIdCache)
++		{
++			int count;
++			return (!globalIdCache.TryGetValue (widget.ID, out count) || count == 1);
++		}
++
++		void LoadWidgets (string fileName, XElement xmlRoot, XNamespace androidNS, Widget widgetRoot, Dictionary <string, int> globalIdCache)
++		{
++			if (!xmlRoot.HasElements)
++				return;
++
++			foreach (XElement child in xmlRoot.Elements ()) {
++				XAttribute id = GetAttribute (child, androidNS, "id");
++				Widget root = null;
++				if (id != null) {
++					root = CreateWidget (fileName, child, id.Value, widgetRoot);
++					if (root != null)
++						Log.LogDebugMessage ($"Adding Widget '{root.Name}' with ID '{root.ID}'");
++					widgetRoot.AddChild (root);
++					if (!String.IsNullOrEmpty (root?.ID)) {
++						if (globalIdCache.ContainsKey (root.ID))
++							globalIdCache [root.ID]++;
++						else
++							globalIdCache.Add (root.ID, 1);
++					}
++				}
++				LoadWidgets (fileName, child, androidNS, root ?? widgetRoot, globalIdCache);
++			}
++		}
++
++		void ParseID (string id, out string parsedId, out string name)
++		{
++			parsedId = null;
++			name = null;
++			id = id?.Trim ();
++			if (String.IsNullOrEmpty (id))
++				return;
++
++			string ns;
++			bool capitalize = false;
++			if (id.StartsWith ("@id/", StringComparison.Ordinal) || id.StartsWith ("@+id/", StringComparison.Ordinal))
++				ns = "Resource.Id";
++			else if (id.StartsWith ("@android:id/")) {
++				ns = "Android.Resource.Id";
++				capitalize = true;
++			} else
++				throw new InvalidOperationException ($"Unknown Android ID format '{id}'");
++
++			var sb = new StringBuilder (id.Substring (id.IndexOf ('/') + 1));
++			if (capitalize)
++				sb [0] = Char.ToUpper (sb [0]);
++
++			name = sb.ToString ();
++			parsedId = $"{ns}.{name}";
++		}
++
++		Widget CreateWidget (string fileName, XElement e, string id, Widget parent)
++		{
++			int line, column;
++			GetLineInfo (e, out line, out column);
++
++			if (String.IsNullOrEmpty (id)) {
++				Log.LogWarning ($"Element {e.Name} defined at '{fileName}:({line},{column})' has an empty ID");
++				return null;
++			}
++
++			string parsedId, name;
++			ParseID (id, out parsedId, out name);
++			var ret = new Widget {
++				Name = name,
++				Type = e.Name.LocalName,
++				ID = parsedId,
++				Parent = parent,
++				FileName = fileName,
++				Line = line,
++				Column = column
++			};
++
++			return ret;
++		}
++
++		ITaskItem GenerateCode (ITaskItem layoutFile, ITaskItem codeBehindFile, CodeGeneratorOptions generatorOptions)
++		{
++			ITaskItem ret = null;
++
++			string klass = layoutFile.GetMetadata ("ClassName");
++			if (String.IsNullOrEmpty (klass)) {
++				Log.LogError ($"Layout file {layoutFile.ItemSpec} doesn't specify the code-behind class name.");
++				return null;
++			}
++			int idx = klass.LastIndexOf ('.');
++			string className;
++			string namespaceName;
++
++			if (idx >= 0) {
++				className = klass.Substring (idx + 1);
++				namespaceName = klass.Substring (0, idx);
++			} else {
++				className = klass;
++				namespaceName = null;
++			}
++
++			if (String.IsNullOrEmpty (className)) {
++				Log.LogError ($"Layout file {layoutFile.ItemSpec} doesn't specify a valid code-behind class name");
++				return null;
++			}
++
++			var compileUnit = new CodeCompileUnit ();
++			var ns = new CodeNamespace (namespaceName);
++			compileUnit.Namespaces.Add (ns);
++			foreach (string import in StandardImports)
++				ns.Imports.Add (new CodeNamespaceImport (import));
++
++			CodeTypeDeclaration mainClass = AddMainClass (layoutFile, ns, className);
++			if (!GenerateLayoutMembers (mainClass, Path.GetFullPath (layoutFile.ItemSpec)))
++				Log.LogError ($"Layout code-behind failed for '{layoutFile.ItemSpec}'");
++			else {
++				var provider = new CSharpCodeProvider ();
++				using (var sw = new StreamWriter (codeBehindFile.ItemSpec, false, Encoding.UTF8)) {
++					using (var tw = new IndentedTextWriter (sw, "\t")) {
++						provider.GenerateCodeFromCompileUnit (compileUnit, tw, generatorOptions);
++					}
++				}
++			}
++
++			return new TaskItem (codeBehindFile.ItemSpec);;
++		}
++
++		CodeTypeDeclaration CreateClass (string className, bool isPartial = false, bool isPublic = true, bool isNested = false, bool isSealed = false)
++		{
++			var ret = new CodeTypeDeclaration (className) {
++				IsClass = true,
++				IsPartial = isPartial,
++
++			};
++
++			TypeAttributes typeAttributes;
++			if (isPublic)
++				typeAttributes = isNested ? TypeAttributes.NestedPublic : TypeAttributes.Public;
++			else
++				typeAttributes = isNested ? TypeAttributes.NestedPrivate : TypeAttributes.NotPublic;
++
++			ret.TypeAttributes = (ret.TypeAttributes & ~TypeAttributes.VisibilityMask) | typeAttributes;
++			if (isSealed)
++				ret.TypeAttributes |= TypeAttributes.Sealed;
++
++			return ret;
++		}
++
++		CodeTypeDeclaration AddLayoutClass (CodeTypeDeclaration outerClass, string className, string parentType)
++		{
++			CodeTypeDeclaration klass = CreateLayoutClass (outerClass, className, parentType);
++			outerClass.Members.Add (klass);
++			return klass;
++		}
++
++		CodeTypeDeclaration CreateLayoutClass (CodeTypeDeclaration mainClass, string className, string parentType)
++		{
++			CodeTypeDeclaration ret = CreateClass (className, isPartial: false, isPublic: true, isNested: true, isSealed: true);
++
++			var mainClassTypeRef = new CodeTypeReference (parentType);
++			ret.Members.Add (new CodeMemberField (mainClassTypeRef, ChildClassParentFieldName));
++
++			var constructor = new CodeConstructor {
++				Attributes = MemberAttributes.Public,
++			};
++			constructor.Parameters.Add (new CodeParameterDeclarationExpression (mainClassTypeRef, ChildClassParentFieldName));
++
++			var assignParent = new CodeAssignStatement (
++				new CodeFieldReferenceExpression (new CodeThisReferenceExpression (), ChildClassParentFieldName),
++				new CodeVariableReferenceExpression (ChildClassParentFieldName)
++			);
++			constructor.Statements.Add (assignParent);
++
++			ret.Members.Add (constructor);
++
++			return ret;
++		}
++
++		CodeTypeDeclaration AddMainClass (ITaskItem layoutFile, CodeNamespace ns, string className)
++		{
++			CodeTypeDeclaration klass = CreateMainClass (layoutFile, className);
++			klass.UserData [UserDataIsMainKey] = true;
++			ns.Types.Add (klass);
++			return klass;
++		}
++
++		CodeTypeDeclaration CreateMainClass (ITaskItem layoutFile, string className)
++		{
++			var ret = CreateClass (className, isPartial: true, isPublic: true);
++
++			AddComment (ret.Comments, $"Generated from layout file '{layoutFile.ItemSpec}'");
++			AddCommonMembers (ret, layoutFile);
++
++			return ret;
++		}
++
++		void AddCommonMembers (CodeTypeDeclaration klass, ITaskItem layoutFile)
++		{
++			var activityTypeRef = new CodeTypeReference ("Android.App.Activity", CodeTypeReferenceOptions.GlobalReference);
++
++			klass.Members.Add (new CodeMemberField (new CodeTypeReference (typeof (bool)), "__throwOnMissingView_LayoutCodeBehind"));
++			klass.Members.Add (ImplementInitializeContentView (layoutFile));
++			klass.Members.Add (ImplementFindView (new CodeTypeReference ("Android.Views.View", CodeTypeReferenceOptions.GlobalReference)));
++			klass.Members.Add (ImplementFindView (activityTypeRef));
++			klass.Members.Add (ImplementFindView (new CodeTypeReference ("Android.App.Fragment", CodeTypeReferenceOptions.GlobalReference), activityTypeRef, (CodeVariableReferenceExpression parentView) => new CodePropertyReferenceExpression (parentView, "Activity")));
++			klass.Members.Add (ImplementEnsureView ());
++			klass.Members.Add (new CodeSnippetTypeMember ("\tpartial void OnLayoutViewNotFound (int resourceId, Type type);"));
++		}
++
++		CodeMemberMethod ImplementInitializeContentView (ITaskItem layoutFile)
++		{
++			CodeMemberMethod method = CreateMethod ("InitializeContentView", MethodAccessibility.Private, MethodScope.Final);
++			method.Parameters.Add (new CodeParameterDeclarationExpression (typeof (bool), "throwOnMissingView = false"));
++
++			var assignThrowOnMissingView = new CodeAssignStatement (
++				new CodeFieldReferenceExpression (new CodeThisReferenceExpression (), "__throwOnMissingView_LayoutCodeBehind"),
++				new CodeVariableReferenceExpression ("throwOnMissingView")
++			);
++			method.Statements.Add (assignThrowOnMissingView);
++
++			// SetContentView (Resource.Layout.Main);
++			string layoutResourceName = $"Resource.Layout.{Path.GetFileNameWithoutExtension (layoutFile.ItemSpec)}";
++			var methodInvoke = new CodeMethodInvokeExpression (
++				new CodeThisReferenceExpression (),
++				"SetContentView",
++				new[] { new CodeSnippetExpression (layoutResourceName) }
++			);
++
++			method.Statements.Add (new CodeExpressionStatement (methodInvoke));
++			return method;
++		}
++
++		CodeMemberMethod ImplementEnsureView ()
++		{
++			CodeMemberMethod method = CreateMethod ("__EnsureView", MethodAccessibility.Private, MethodScope.Final);
++
++			// T __EnsureView <T> (Func<T> creator, ref T field) where T: class
++			var typeParam = new CodeTypeParameter ("T");
++			typeParam.Constraints.Add (" class"); // Hack: CodeDOM doesn't support the "class" constraint
++							      // and not passing the leading whitespace would result
++							      // in @class being output in generated code
++			method.TypeParameters.Add (typeParam);
++
++			var tRef = new CodeTypeReference (typeParam);
++			var funcRef = new CodeTypeReference (typeof(Func<>));
++			funcRef.TypeArguments.Add (tRef);
++			method.Parameters.Add (new CodeParameterDeclarationExpression (funcRef, "creator"));
++
++			method.Parameters.Add (
++				new CodeParameterDeclarationExpression (tRef, "field") {
++					Direction = FieldDirection.Ref
++				}
++			);
++			method.ReturnType = tRef;
++
++			// if (field != null)
++			//    return field;
++			var fieldVarRef = new CodeVariableReferenceExpression ("field");
++			var ifFieldNotNull = new CodeConditionStatement (
++				new CodeBinaryOperatorExpression (fieldVarRef, CodeBinaryOperatorType.IdentityInequality, new CodePrimitiveExpression(null)),
++				new[] { new CodeMethodReturnStatement (fieldVarRef) }
++			);
++			method.Statements.Add (ifFieldNotNull);
++
++			// if (creator == null)
++			//    throw new ArgumentNullException (nameof (creator));
++			var creatorVarRef = new CodeVariableReferenceExpression ("creator");
++			var argNullEx = new CodeThrowExceptionStatement (
++				new CodeObjectCreateExpression (
++					new CodeTypeReference (typeof (ArgumentNullException)),
++					new[] { new CodeSnippetExpression ("nameof (creator)") }
++				)
++			);
++			var ifCreatorNull = new CodeConditionStatement (
++				new CodeBinaryOperatorExpression (creatorVarRef, CodeBinaryOperatorType.IdentityEquality, new CodePrimitiveExpression (null)),
++				new[] { argNullEx }
++			);
++			method.Statements.Add (ifCreatorNull);
++
++			// field = creator ();
++			method.Statements.Add (new CodeAssignStatement (fieldVarRef, new CodeDelegateInvokeExpression (creatorVarRef)));
++
++			// return field;
++			method.Statements.Add (new CodeMethodReturnStatement (fieldVarRef));
++			return method;
++		}
++
++		CodeMemberMethod ImplementFindView (CodeTypeReference typeForParent, CodeTypeReference typeForOverloadCall = null, Func<CodeVariableReferenceExpression, CodeExpression> constructParentViewCall = null)
++		{
++			CodeMemberMethod method = CreateMethod ("__FindView", MethodAccessibility.Private, MethodScope.Final);
++
++			// T __FindView<T> (int resourceId) where T: Android.Views.View
++			var typeParam = new CodeTypeParameter ("T");
++			typeParam.Constraints.Add (new CodeTypeReference ("Android.Views.View", CodeTypeReferenceOptions.GlobalReference));
++			method.TypeParameters.Add (typeParam);
++			method.Parameters.Add (new CodeParameterDeclarationExpression (typeForParent, "parentView"));
++			method.Parameters.Add (new CodeParameterDeclarationExpression (typeof(int), "resourceId"));
++
++			var tReference = new CodeTypeReference (typeParam);
++			method.ReturnType = tReference;
++
++			// T view = parentView.FindViewById<T> (resourceId);
++			var parentViewRef = new CodeVariableReferenceExpression ("parentView");
++			var resourceIdVarRef = new CodeVariableReferenceExpression ("resourceId");
++
++			if (typeForOverloadCall != null) {
++				var findViewRef = new CodeMethodReferenceExpression (
++					new CodeThisReferenceExpression (),
++					"__FindView",
++					new[] { tReference }
++				);
++
++				CodeExpression parentViewParam;
++				if (constructParentViewCall != null)
++					parentViewParam = constructParentViewCall (parentViewRef);
++				else
++					parentViewParam = parentViewRef;
++				var findViewCall = new CodeMethodInvokeExpression (findViewRef, new CodeExpression[] { parentViewParam, resourceIdVarRef });
++				method.Statements.Add (new CodeMethodReturnStatement (findViewCall));
++
++				return method;
++			}
++
++			var findByIdRef = new CodeMethodReferenceExpression (
++				parentViewRef,
++				"FindViewById",
++				new[] { tReference }
++			);
++
++			var findByIdInvoke = new CodeMethodInvokeExpression (findByIdRef, new[] { resourceIdVarRef });
++			var viewVar = new CodeVariableDeclarationStatement (tReference, "view", findByIdInvoke);
++			method.Statements.Add (viewVar);
++
++			// if (view == null) {
++			//    if (__throwOnMissingView_LayoutCodeBehind)
++			//        throw InvalidOperationException($"View not found (ID: {resourceId})");
++			//    else
++			//        OnLayoutViewNotFound (resourceId, typeof (T));
++			//
++			var throwInvOp = new CodeThrowExceptionStatement (
++				new CodeObjectCreateExpression (
++					new CodeTypeReference (typeof (InvalidOperationException)),
++					new[] { new CodeSnippetExpression ("$\"View not found (ID: {resourceId})\"") }
++				)
++			);
++
++			var viewNotFoundInvoke = new CodeMethodInvokeExpression (
++				new CodeThisReferenceExpression (),
++				"OnLayoutViewNotFound",
++				new CodeExpression[] { resourceIdVarRef, new CodeTypeOfExpression (tReference) }
++			);
++
++			var ifThrow = new CodeConditionStatement (
++				new CodeVariableReferenceExpression ("__throwOnMissingView_LayoutCodeBehind"),
++				new[] { throwInvOp },
++				new[] { new CodeExpressionStatement (viewNotFoundInvoke) }
++			);
++			var viewVarRef = new CodeVariableReferenceExpression ("view");
++			var ifViewNull = new CodeConditionStatement (
++				new CodeBinaryOperatorExpression (viewVarRef, CodeBinaryOperatorType.IdentityEquality, new CodePrimitiveExpression(null)),
++				new[] { ifThrow }
++			);
++			method.Statements.Add (ifViewNull);
++
++			// return view;
++			method.Statements.Add (new CodeMethodReturnStatement (viewVarRef));
++
++			return method;
++		}
++
++		CodeMemberMethod CreateMethod (string methodName, MethodAccessibility access, MethodScope scope)
++		{
++			return CreateMethod (methodName, access, scope, (CodeTypeReference)null);
++		}
++
++		CodeMemberMethod CreateMethod (string methodName, MethodAccessibility access, MethodScope scope, Type returnType)
++		{
++			return CreateMethod (methodName, access, scope, new CodeTypeReference (returnType));
++		}
++
++		CodeMemberMethod CreateMethod (string methodName, MethodAccessibility access, MethodScope scope, string returnType)
++		{
++			return CreateMethod (methodName, access, scope, new CodeTypeReference (returnType));
++		}
++
++		CodeMemberMethod CreateMethod (string methodName, MethodAccessibility access, MethodScope scope, CodeTypeReference returnType)
++		{
++			var ret = new CodeMemberMethod {
++				Name = methodName,
++			};
++			if (returnType != null)
++				ret.ReturnType = returnType;
++
++			MemberAttributes attrs;
++			switch (access) {
++				case MethodAccessibility.Internal:
++					attrs = MemberAttributes.FamilyAndAssembly;
++					break;
++
++				case MethodAccessibility.Private:
++					attrs = MemberAttributes.Private;
++					break;
++
++				case MethodAccessibility.Protected:
++					attrs = MemberAttributes.Family;
++					break;
++
++				case MethodAccessibility.Public:
++					attrs = MemberAttributes.Public;
++					break;
++
++				default:
++					throw new NotSupportedException ($"Method accessibility {access} is not supported");
++			}
++
++			if ((scope & MethodScope.Static) == MethodScope.Static) {
++				attrs |= MemberAttributes.Static | MemberAttributes.Final;
++			} else if ((scope & MethodScope.Abstract) == MethodScope.Abstract) {
++				attrs |= MemberAttributes.Abstract;
++			} else {
++				if ((scope & MethodScope.Override) == MethodScope.Override) {
++					attrs |= MemberAttributes.Override;
++				} else if ((scope & MethodScope.Virtual) == MethodScope.Virtual) {
++				} else {
++					attrs |= MemberAttributes.Final;
++				}
++			}
++
++			ret.Attributes = attrs;
++			return ret;
++		}
++
++		void AddComment (CodeCommentStatementCollection comments, string comment)
++		{
++			comments.Add (new CodeCommentStatement (comment));
++		}
++
++		void MarkAsCompilerGenerated (CodeTypeMember member)
++		{
++			AddCustomAttribute (member.CustomAttributes, typeof (CompilerGeneratedAttribute));
++		}
++
++		void AddCustomAttribute (CodeAttributeDeclarationCollection attributes, Type type)
++		{
++			attributes.Add (new CodeAttributeDeclaration (new CodeTypeReference (type)));
++		}
++	}
++}
+diff --git a/src/Xamarin.Android.Build.Tasks/Xamarin.Android.Build.Tasks.csproj b/src/Xamarin.Android.Build.Tasks/Xamarin.Android.Build.Tasks.csproj
+index 2324bb5..78107d1 100644
+--- a/src/Xamarin.Android.Build.Tasks/Xamarin.Android.Build.Tasks.csproj
++++ b/src/Xamarin.Android.Build.Tasks/Xamarin.Android.Build.Tasks.csproj
+@@ -519,6 +519,8 @@
+     <Compile Include="Utilities\Profile.cs" />
+     <None Include="Xamarin.Android.Build.Tasks.targets" />
+     <Compile Include="Linker\MonoDroid.Tuner\PreserveTlsProvider.cs" />
++    <Compile Include="Tasks\GenerateLayoutsCodeBehind.cs" />
++    <Compile Include="Tasks\FindLayoutsWithCodeBehind.cs" />
+   </ItemGroup>
+   <!-- MD doesn't handle MSBuildToolsPath yet
+   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+diff --git a/src/Xamarin.Android.Build.Tasks/Xamarin.Android.Common.targets b/src/Xamarin.Android.Build.Tasks/Xamarin.Android.Common.targets
+index 2959b8c..46faf8e 100755
+--- a/src/Xamarin.Android.Build.Tasks/Xamarin.Android.Common.targets
++++ b/src/Xamarin.Android.Build.Tasks/Xamarin.Android.Common.targets
+@@ -91,6 +91,8 @@ Copyright (C) 2011-2012 Xamarin. All rights reserved.
+ <UsingTask TaskName="Xamarin.Android.Tasks.Proguard" AssemblyFile="Xamarin.Android.Build.Tasks.dll" />
+ <UsingTask TaskName="Xamarin.Android.Tasks.DetermineJavaLibrariesToCompile" AssemblyFile="Xamarin.Android.Build.Tasks.dll" />
+ <UsingTask TaskName="Xamarin.Android.Tasks.CreateMultiDexMainDexClassList" AssemblyFile="Xamarin.Android.Build.Tasks.dll" />
++<UsingTask TaskName="Xamarin.Android.Tasks.GenerateLayoutsCodeBehind" AssemblyFile="Xamarin.Android.Build.Tasks.dll" />
++<UsingTask TaskName="Xamarin.Android.Tasks.FindLayoutsWithCodeBehind" AssemblyFile="Xamarin.Android.Build.Tasks.dll" />
+ 
+ <!--
+ *******************************************
+@@ -948,6 +950,7 @@ because xbuild doesn't support framework reference assemblies.
+ 	<MonoAndroidIntermediateAssemblyTempDir>$(IntermediateOutputPath)linkdst\</MonoAndroidIntermediateAssemblyTempDir>
+ 	<MonoAndroidResourcePrefix Condition="'$(MonoAndroidResourcePrefix)' == ''">Resources</MonoAndroidResourcePrefix>
+ 	<MonoAndroidIntermediate>$(IntermediateOutputPath)</MonoAndroidIntermediate>
++  <MonoAndroidCodeBehindDir>$(MonoAndroidIntermediate)codebehind</MonoAndroidCodeBehindDir>
+ 	<MonoAndroidIntermediateResourceCache>$(IntermediateOutputPath)resourcecache</MonoAndroidIntermediateResourceCache>
+ 	<_AndroidAotBinDirectory>$(IntermediateOutputPath)aot</_AndroidAotBinDirectory>
+ 	<_AndroidResgenFlagFile>$(IntermediateOutputPath)R.cs.flag</_AndroidResgenFlagFile>
+@@ -1028,6 +1031,29 @@ because xbuild doesn't support framework reference assemblies.
+ 	<MakeDir Directories="$(MonoAndroidResDirIntermediate)" />
+ </Target>
+ 
++<Target Name="_FindLayoutsWithCodeBehind">
++  <FindLayoutsWithCodeBehind ResourceFiles="@(AndroidResource)" ExplicitFile="$(_ExplicitCodeBehindLayout)">
++    <Output ItemName="_LayoutWithCodeBehind" TaskParameter="LayoutFiles" />
++  </FindLayoutsWithCodeBehind>
++</Target>
++
++<Target Name="_GenerateLayoutsCodeBehind"
++        DependsOnTargets="_FindLayoutsWithCodeBehind"
++        Inputs="@(_LayoutWithCodeBehind)"
++        Outputs="@(_LayoutWithCodeBehind->'$(MonoAndroidCodeBehindDir)\%(CodeBehindFileName)')">
++  <MakeDir Directories="$(MonoAndroidCodeBehindDir)" Condition="!Exists('$(MonoAndroidCodeBehindDir)')"/>
++	<GenerateLayoutsCodeBehind LayoutFiles="@(_LayoutWithCodeBehind)" CodeBehindFiles="@(_LayoutWithCodeBehind->'$(MonoAndroidCodeBehindDir)\%(CodeBehindFileName)')"/>
++</Target>
++
++<Target
++    Name="_IncludeLayoutsCodeBehindSources"
++    DependsOnTargets="_GenerateLayoutsCodeBehind">
++  <Message Text="Including generated layout code-behind files in build: @(_LayoutWithCodeBehind->'$(MonoAndroidCodeBehindDir)\%(CodeBehindFileName)')"/>
++  <ItemGroup>
++    <Compile Include="@(_LayoutWithCodeBehind->'$(MonoAndroidCodeBehindDir)\%(CodeBehindFileName)')"/>
++  </ItemGroup>
++</Target>
++
+ <Target Name="_GenerateAndroidResourceDir"
+ 	Inputs="$(MSBuildAllProjects);@(AndroidResource);$(_AndroidBuildPropertiesCache)"
+ 	Outputs="@(_AndroidResourceDest)"
+@@ -1234,6 +1260,7 @@ because xbuild doesn't support framework reference assemblies.
+ 		_GetAdditionalResourcesFromAssemblies;
+ 		_CreateAdditionalResourceCache;
+ 		_GenerateAndroidResourceDir;
++    _IncludeLayoutsCodeBehindSources;
+ 	</_UpdateAndroidResgenDependsOnTargets>
+ </PropertyGroup>
+ 
