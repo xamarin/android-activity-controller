@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<package>
+  <metadata>
+    <id>Xamarin.Android.ActivityController</id>
+    <title>Xamarin.Android Activity Controller</title>
+    <version>$version$</version>
+    <authors>Xamarin Inc.</authors>
+    <owners>Xamarin Inc.</owners>
+    <summary>Manage your Activities in a more .NET friendly way, including StartActivityForResultAsync</summary>
+    <description>
+      Manage your Activities in a more .NET friendly way, including StartActivityForResultAsync
+    </description>
+    <copyright>Copyright © Microsoft Corporation</copyright>
+    <projectUrl>http://github.com/xamarin/XamarinComponents</projectUrl>
+    <licenseUrl>http://github.com/xamarin/XamarinComponents</licenseUrl>
+    <dependencies>
+      <dependency id="Xamarin.Android.Support.v7.AppCompat" version="23.3.0" />
+    </dependencies>
+  </metadata>
+  <files>
+    <file src="Xamarin.Android.ActivityController/bin/Release/Xamarin.Android.ActivityController.dll" target="lib/MonoAndroid403" />
+  </files>
+</package>
