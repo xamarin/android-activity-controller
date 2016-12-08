@@ -1,7 +1,11 @@
 Xamarin.Android ActivityController
 ==================================
 
+
 The `ActivityController` makes managing Android Activities more .NET friendly.
+
+[![](https://img.shields.io/jenkins/s/https/jenkins.mono-project.com/Components-OpenSource-Publish.svg)](https://jenkins.mono-project.com/view/Components/job/Components-OpenSource-Publish/)
+[![](https://img.shields.io/nuget/vpre/Xamarin.Android.ActivityController.svg)](https://www.nuget.org/packages/Xamarin.Android.ActivityController/)
 
 Traditionally, launching subsequent Activities and waiting for them to return their results has been somewhat painful.
 With the `ActivityController` you can use `async/await` by starting activities through the `StartActivityForResultAsync (..)` method.  
