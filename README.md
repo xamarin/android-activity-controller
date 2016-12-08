@@ -8,52 +8,48 @@ With the `ActivityController` you can use `async/await` by starting activities t
 
 You can use `ActivityController` as a replacement for `AppCompatActivity`.  The underlying lifecycle of your activity is handled for you.
 
+Your `ActivityController` subclass can override some of the typical methods you would expect in an `Activity`.  It must be associated with a subclass of `ControllerActivity<TController>`.  Here is a boiler plate implementation:
 
-```csharp
-public class MainController : ActivityController
+```sharp
+[Activity(MainLauncher = true, Label = "Your Activity", Theme = "@style/Theme.AppCompat")]
+public class MainActivity : ControllerActivity<MainActivity.MainController>
 {
-    protected override void OnCreate(Android.OS.Bundle savedInstanceState)
+    public class MainController : ActivityController
     {
-        base.OnCreate(savedInstanceState);
+        protected override void OnCreate(Android.OS.Bundle savedInstanceState)
+        {
+            base.OnCreate(savedInstanceState);
 
-        SetContentView(Resource.Layout.Main);
+            SetContentView(Resource.Layout.FirstLayout);
 
-        FindViewById<Button>(Resource.Id.myButton).Click += Button_Click;
-    }
-
-    async void Button_Click(object sender, EventArgs e)
-    {
-        var contactPickerIntent = new Intent(Intent.ActionPick, ContactsContract.CommonDataKinds.Phone.ContentUri);
-
-        var result = await StartActivityForResultAsync(contactPickerIntent);
-
-        var contactUri = result?.Data?.Data;
-
-        if (contactUri != null)
-            Toast.MakeText(Activity, "You Picked: " + GetDisplayName(contactUri), ToastLength.Long).Show();
-    }
-
-    string GetDisplayName(Android.Net.Uri uri)
-    {
-        var c = Activity.ContentResolver.Query(uri, null, null, null, null);
-        c.MoveToFirst();
-        return c.GetString(c.GetColumnIndex(ContactsContract.ContactNameColumns.DisplayNamePrimary));
+            // Your code            
+        }
     }
 }
 ```
 
-Your `ActivityController` subclass can override some of the typical methods you would expect in an `Activity`.
+Now you are ready to call `StartActivityForResultAsync (..)` from your controller:
 
-You can also access the instance of the underlying `AppCompatActivity` directly via the `Activity` property.
+```sharp
+async void Button_Click(object sender, EventArgs e)
+{
+    var contactPickerIntent = new Intent(Intent.ActionPick, ContactsContract.CommonDataKinds.Phone.ContentUri);
+
+    var result = await StartActivityForResultAsync(contactPickerIntent);
+
+    var contactUri = result?.Data?.Data;
+
+	// Get Contact Name from the ContentResolver
+	// var displayName = ...
+	
+    if (contactUri != null)
+        Toast.MakeText(Activity, "You Picked: " + displayName, ToastLength.Long).Show();
+}
+```
 
 
-You will also need to subclass `ControllerActivity<TController>` in order to be able to decorate it with the `[Activity]` attribute
-which will be merged into your app's _AndroidManifest.xml_ file.  This subclass can be an empty implementation.  The generic type argument should be the type of your `ActivityController` subclass:
+You can also access the instance of the underlying `AppCompatActivity` directly via the `Activity` property of your `ActivityController`, as seen in the snippet above.
 
-```csharp
-[Activity(Theme = "@style/Theme.AppCompat")]
-public class MainActivity : ControllerActivity<MainController> { }
-```  
 
 Finally, if you need to, you can also alter your subclass of `ControllerActivity` directly to override more methods
 and make other changes. 
@@ -70,3 +66,28 @@ public class MainActivity : ControllerActivity<MainController>
     }
 }
 ```
+
+### Helpers
+
+To make some common tasks easier, `ActivityController` also contains some helper methods which construct the appropriate `Intent` and returns a strongly typed version of `ActivityResult` with more useful properties.
+
+The helper methods include:
+
+ - PickContactAsync
+
+```csharp
+var result = await PickContactAsync ();
+var contactUri = result.SelectedContactUri;
+```  
+
+ - PickPhotoAsync
+ - TakePhotoAsync
+ - PickVideoAsync
+ - TakeVideoAsync
+
+```csharp
+var result = await PickPhotoAsync ("Title");
+var stream = result.GetMediaStream ();
+```
+
+
