@@ -10,7 +10,7 @@ using Android.Widget;
 
 namespace Android.App
 {
-    public class ActivityController
+    public partial class ActivityController
     {
         public string AssociatedActivityId { get; internal set; } = Guid.NewGuid().ToString();
 

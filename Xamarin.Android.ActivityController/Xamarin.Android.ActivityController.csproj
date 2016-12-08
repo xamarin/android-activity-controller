@@ -63,6 +63,8 @@
     <Compile Include="IActivityResult.cs" />
     <Compile Include="ActivityResults\ContactPickerActivityResult.cs" />
     <Compile Include="ActivityResult.cs" />
+    <Compile Include="ActivityControllerExtensions.cs" />
+    <Compile Include="ActivityResults\MediaPickerActivityResult.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Resources\AboutResources.txt" />
