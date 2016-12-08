@@ -10,7 +10,7 @@ You can use `ActivityController` as a replacement for `AppCompatActivity`.  The 
 
 Your `ActivityController` subclass can override some of the typical methods you would expect in an `Activity`.  It must be associated with a subclass of `ControllerActivity<TController>`.  Here is a boiler plate implementation:
 
-```sharp
+```csharp
 [Activity(MainLauncher = true, Label = "Your Activity", Theme = "@style/Theme.AppCompat")]
 public class MainActivity : ControllerActivity<MainActivity.MainController>
 {
@@ -30,7 +30,7 @@ public class MainActivity : ControllerActivity<MainActivity.MainController>
 
 Now you are ready to call `StartActivityForResultAsync (..)` from your controller:
 
-```sharp
+```csharp
 async void Button_Click(object sender, EventArgs e)
 {
     var contactPickerIntent = new Intent(Intent.ActionPick, ContactsContract.CommonDataKinds.Phone.ContentUri);
