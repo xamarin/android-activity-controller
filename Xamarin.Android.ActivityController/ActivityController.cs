@@ -60,6 +60,9 @@ namespace Android.App
         {
             var result = await StartActivityForResultAsync(intent, requestCode);
 
+            if (result == null)
+                return null;
+            
             return (TActivityResult)Activator.CreateInstance(typeof(TActivityResult), result.ResultCode, result.RequestCode, result.Data);
         }
 
@@ -94,7 +97,7 @@ namespace Android.App
 
                 if (resultCode == Result.Canceled)
                 {
-                    tcs.TrySetCanceled();
+                    tcs.TrySetResult(null);
                     return;
                 }
 
