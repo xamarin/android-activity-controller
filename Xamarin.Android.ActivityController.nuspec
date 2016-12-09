@@ -11,8 +11,8 @@
       Manage your Activities in a more .NET friendly way, including StartActivityForResultAsync
     </description>
     <copyright>Copyright © Microsoft Corporation</copyright>
-    <projectUrl>http://github.com/xamarin/XamarinComponents</projectUrl>
-    <licenseUrl>http://github.com/xamarin/XamarinComponents</licenseUrl>
+    <projectUrl>https://github.com/xamarin/android-activity-controller</projectUrl>
+    <licenseUrl>https://github.com/xamarin/android-activity-controller/blob/master/LICENSE.md</licenseUrl>
     <dependencies>
       <dependency id="Xamarin.Android.Support.v7.AppCompat" version="23.3.0" />
     </dependencies>
