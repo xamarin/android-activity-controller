@@ -1,6 +1,6 @@
 var target = Argument ("t", Argument ("target", "libs"));
 
-var NUGET_VERSION = "0.1.0-beta1";
+var NUGET_VERSION = "0.1.0-beta2";
 
 Task ("libs").Does (() => {
 	EnsureDirectoryExists ("./output");
