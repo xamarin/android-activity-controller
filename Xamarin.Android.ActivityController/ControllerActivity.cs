@@ -25,8 +25,8 @@ namespace Android.App
 
         public Task<ActivityResult> StartActivityForResultAsync(Intent intent, int requestCode)
         {
-            var info = (AssociatedActivityInfo<TController>)ActivityControllerRegistry.Get(AssociatedActivityId);
-            return info.ControllerActivity.StartActivityForResultAsync(intent, requestCode);
+            var controller = GetController();
+            return controller.StartActivityForResultAsync(intent, requestCode);
         }
 
         internal Action<Bundle> OnCreateHandler { get; set; }
