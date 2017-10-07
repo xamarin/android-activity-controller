@@ -18,6 +18,12 @@ namespace Android.App
 
         public string AssociatedActivityId { get; private set; }
 
+        public Task<ActivityResult> StartActivityForResultAsync(Type activityType)
+        {
+            var intent = new Android.Content.Intent(this, activityType);
+            return StartActivityForResultAsync(intent);
+        }
+
         public Task<ActivityResult> StartActivityForResultAsync(Intent intent)
         {
             return StartActivityForResultAsync(intent, ActivityControllerRegistry.NextRequestCode());

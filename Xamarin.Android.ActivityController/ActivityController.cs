@@ -32,6 +32,12 @@ namespace Android.App
         // Stores pending startActivityForResult invocations
         Dictionary<int, TaskCompletionSource<ActivityResult>> activityCompletionSources = new Dictionary<int, TaskCompletionSource<ActivityResult>> ();
 
+        public Task<ActivityResult> StartActivityForResultAsync(Type activityType)
+        {
+            var intent = new Intent(Activity, activityType);
+            return StartActivityForResultAsync(intent);
+        }
+        
         public Task<ActivityResult> StartActivityForResultAsync(Intent intent)
         {
             return StartActivityForResultAsync(intent, ActivityControllerRegistry.NextRequestCode());
@@ -51,6 +57,12 @@ namespace Android.App
             return tcs.Task;
         }
 
+        public Task<TActivityResult> StartActivityForResultAsync<TActivityResult>(Type activityType) where TActivityResult : ActivityResult
+        {
+            var intent = new Intent(Activity, activityType);
+            return StartActivityForResultAsync<TActivityResult>(intent);
+        }
+        
         public Task<TActivityResult> StartActivityForResultAsync<TActivityResult>(Intent intent) where TActivityResult : ActivityResult
         {
             return StartActivityForResultAsync<TActivityResult>(intent, ActivityControllerRegistry.NextRequestCode());
