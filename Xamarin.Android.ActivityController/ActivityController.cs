@@ -57,6 +57,12 @@ namespace Android.App
             return tcs.Task;
         }
 
+        public Task<TActivityResult> StartActivityForResultAsync<TActivityResult>(Type activityType) where TActivityResult : ActivityResult
+        {
+            var intent = new Intent(Activity, activityType);
+            return StartActivityForResultAsync<TActivityResult>(intent);
+        }
+        
         public Task<TActivityResult> StartActivityForResultAsync<TActivityResult>(Intent intent) where TActivityResult : ActivityResult
         {
             return StartActivityForResultAsync<TActivityResult>(intent, ActivityControllerRegistry.NextRequestCode());
