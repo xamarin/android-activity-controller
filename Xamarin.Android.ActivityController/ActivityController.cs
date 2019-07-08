@@ -66,7 +66,7 @@ namespace Android.App
             return (TActivityResult)Activator.CreateInstance(typeof(TActivityResult), result.ResultCode, result.RequestCode, result.Data);
         }
 
-        internal void WireupHandlers<TActivityController>(ControllerActivity<TActivityController> activity) where TActivityController : ActivityController
+        internal void WireupHandlers(IControllerActivity activity)
         {
             activity.OnStartHandler = OnStart;
             activity.OnCreateHandler = (p) => this.OnCreate (p);

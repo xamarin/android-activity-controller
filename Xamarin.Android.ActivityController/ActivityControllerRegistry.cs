@@ -26,7 +26,7 @@ namespace Android.App
 
         static readonly Dictionary<string, AssociatedActivityInfo> associatedActivities = new Dictionary<string, AssociatedActivityInfo>();
 
-        internal static AssociatedActivityInfo<TController> Associate<TController>(string associatedActivityId, ControllerActivity<TController> activity) where TController : ActivityController
+        internal static AssociatedActivityInfo<TController> Associate<TController>(string associatedActivityId, IControllerActivity activity) where TController : ActivityController
         {
             AssociatedActivityInfo<TController> info;
 
@@ -40,7 +40,7 @@ namespace Android.App
                 {
                     Id = associatedActivityId,
                     ControllerActivity = activity,
-                    AppCompatActivity = activity,
+                    AppCompatActivity = activity.AppCompatActivity,
                 };
                 associatedActivities.Add(info.Id, info);
             }
@@ -52,7 +52,7 @@ namespace Android.App
             }
 
             info.ControllerActivity = activity;
-            info.AppCompatActivity = activity;
+            info.AppCompatActivity = activity.AppCompatActivity;
             info.ActivityController.WireupHandlers(activity);
 
             return info;
@@ -76,7 +76,7 @@ namespace Android.App
 
     internal class AssociatedActivityInfo<TController> : AssociatedActivityInfo where TController : ActivityController
     {
-        public ControllerActivity<TController> ControllerActivity { get; set; }
+        public IControllerActivity ControllerActivity { get; set; }
         public TController ActivityController { get; set; }
     }
 

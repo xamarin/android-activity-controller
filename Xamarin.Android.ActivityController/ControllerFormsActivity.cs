@@ -5,11 +5,12 @@ using Android.Content;
 using Android.OS;
 using Android.Support.V7.App;
 using Android.Widget;
+using Xamarin.Forms.Platform.Android;
 
 namespace Android.App
 {
-    public abstract class ControllerActivity<TController> : AppCompatActivity, IControllerActivity 
-         where TController : ActivityController
+    public abstract class ControllerFormsActivity<TController> : FormsAppCompatActivity, IControllerActivity 
+           where TController : ActivityController
     {
         public TController GetController ()
         {
